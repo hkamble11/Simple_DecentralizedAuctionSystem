@@ -1,3 +1,4 @@
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
@@ -21,7 +22,7 @@ contract DecentralizedAuctionSystem {
     // Stores participant bids for each auction
     mapping(uint => mapping(address => uint)) public participantsList;
 
-    // ---- --- ----
+    // Stores pending refunds for each bidder
     mapping(uint => mapping(address => uint)) public pendingReturns;
 
     function createAuction(
@@ -46,76 +47,102 @@ contract DecentralizedAuctionSystem {
         require(msg.value > 0, "Amount must be greater than zero");
         require(auctionId < auctionCount, "Auction does not exist");
         require(!auction[auctionId].ended, "Auction has ended");
+
         require(
             block.timestamp < auction[auctionId].endTime,
             "Auction deadline passed"
         );
+
         require(
             msg.sender != auction[auctionId].seller,
             "Seller cannot bid"
         );
+
         require(
             msg.value >= auction[auctionId].minimumBid,
             "Bid is below minimum"
         );
+
         require(
             msg.value > auction[auctionId].highestBid,
             "Bid must be higher than current highest bid"
         );
 
-        // Refund Logic 
-        if(auction[auctionId].highestBidder != address(0))  {
-            // Here I am Doing += I am updating the value here in the previous bid of the smae person
-            pendingReturns[auctionId][auction[auctionId].highestBidder] += auction[auctionId].highestBid;
-        }   
-        //
+        // Refund Logic
+        if (auction[auctionId].highestBidder != address(0)) {
+            pendingReturns[auctionId][auction[auctionId].highestBidder] +=
+                auction[auctionId].highestBid;
+        }
+
         auction[auctionId].highestBid = msg.value;
         auction[auctionId].highestBidder = msg.sender;
 
         participantsList[auctionId][msg.sender] = msg.value;
     }
-    // 
-        function withdrawRefund(uint auctionId) public {
-            require(auctionId < auctionCount, "Auction does not exist");
-            // check
-            uint amount = pendingReturns[auctionId][msg.sender];
-            require(amount > 0, "Amount Should be greater then zero");
-            //Effect
-            pendingReturns[auctionId][msg.sender] = 0;
-            // Interaction 
-            (bool success, ) = payable(msg.sender).call{value: amount}("");
-            require(success, "Transfer is fiald");
-        }
 
-        // endAuction 
-       function endAuction(uint auctionId) public {
-         // Checks
+    // Withdraw refund
+    function withdrawRefund(uint auctionId) public {
+        require(auctionId < auctionCount, "Auction does not exist");
+
+        // Checks
+        uint amount = pendingReturns[auctionId][msg.sender];
+
+        require(amount > 0, "Amount should be greater than zero");
+
+        // Effects
+        pendingReturns[auctionId][msg.sender] = 0;
+
+        // Interaction
+        (bool success, ) = payable(msg.sender).call{value: amount}("");
+
+        require(success, "Transfer failed");
+    }
+
+    // End auction
+    function endAuction(uint auctionId) public {
+        // Checks
         require(auctionId < auctionCount, "Auction does not exist");
         require(!auction[auctionId].ended, "Auction already ended");
 
         require(
             block.timestamp >= auction[auctionId].endTime,
-                "Auction is still going on" );
+            "Auction is still going on"
+        );
 
         // Effects
         auction[auctionId].ended = true;
     }
-    //
+
+    // Seller withdraws winning bid
     function withdrawFunds(uint auctionId) public {
-    // Checks
-    require(auctionId < auctionCount, "Auction does not exist");
-    require(msg.sender == auction[auctionId].seller, "Only seller can withdraw");
-    require(auction[auctionId].ended, "Auction is not ended yet");
-    require(!auction[auctionId].fundsWithdrawn, "Funds already withdrawn");
+        // Checks
+        require(auctionId < auctionCount, "Auction does not exist");
 
-    uint amount = auction[auctionId].highestBid;
-    require(amount > 0, "No winning bid");
+        require(
+            msg.sender == auction[auctionId].seller,
+            "Only auction seller can withdraw"
+        );
 
-    // Effects
-    auction[auctionId].fundsWithdrawn = true;
+        require(
+            auction[auctionId].ended,
+            "Auction is not ended yet"
+        );
 
-    // Interaction
-    (bool success,) = payable(msg.sender).call{value: amount}("");
-    require(success, "Transfer failed");
-}
+        require(
+            !auction[auctionId].fundsWithdrawn,
+            "Funds already withdrawn"
+        );
+
+        uint amount = auction[auctionId].highestBid;
+
+        require(amount > 0, "No winning bid");
+
+        // Effects
+        auction[auctionId].fundsWithdrawn = true;
+
+        // Interaction
+        (bool success, ) = payable(msg.sender).call{value: amount}("");
+
+        require(success, "Transfer failed");
+    }
 }
